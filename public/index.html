@@ -146,6 +146,16 @@
         filter: brightness(1.04);
       }
 
+      .ghost-button {
+        color: var(--accent-strong);
+        background: rgba(15, 118, 110, 0.1);
+        border: 1px solid rgba(15, 118, 110, 0.18);
+      }
+
+      .ghost-button[hidden] {
+        display: none;
+      }
+
       .status {
         min-height: 1.5rem;
         margin: 8px 0 0;
@@ -217,6 +227,7 @@
               <input id="playlist-url" value="" placeholder="/streams/harry-potter-hls/master.m3u8" />
             </div>
             <button id="load-button" type="button">Load stream</button>
+            <button id="go-live-button" class="ghost-button" type="button" hidden>Go Live</button>
             <p id="status" class="status">Waiting for a playlist...</p>
           </div>
         </article>
@@ -250,7 +261,71 @@
       const picker = document.getElementById("playlist-picker");
       const input = document.getElementById("playlist-url");
       const button = document.getElementById("load-button");
+      const goLiveButton = document.getElementById("go-live-button");
       let hls;
+      let stayBehindLive = false;
+      let lastLiveTargetDuration = 0;
+
+      function liveEdgeDistance() {
+        if (!video.seekable || video.seekable.length === 0) {
+          return 0;
+        }
+
+        return video.seekable.end(video.seekable.length - 1) - video.currentTime;
+      }
+
+      function isLiveWindowActive() {
+        return Boolean(hls?.latestLevelDetails?.live && lastLiveTargetDuration);
+      }
+
+      function updateGoLiveButton() {
+        goLiveButton.hidden = !isLiveWindowActive();
+        goLiveButton.textContent = stayBehindLive ? "Go Live" : "At Live Edge";
+        goLiveButton.disabled = !stayBehindLive;
+      }
+
+      function refreshLiveModeState() {
+        if (!isLiveWindowActive()) {
+          stayBehindLive = false;
+          if (hls) {
+            hls.config.maxLiveSyncPlaybackRate = 1.2;
+          }
+          video.playbackRate = 1;
+          updateGoLiveButton();
+          return;
+        }
+
+        stayBehindLive = liveEdgeDistance() > Math.max(lastLiveTargetDuration * 3, 6);
+
+        if (hls) {
+          hls.config.maxLiveSyncPlaybackRate = stayBehindLive ? 1 : 1.2;
+        }
+
+        video.playbackRate = stayBehindLive ? 1 : Math.min(video.playbackRate || 1, 1.2);
+        updateGoLiveButton();
+      }
+
+      async function goLive() {
+        if (!video.seekable || video.seekable.length === 0) {
+          setStatus("Live edge is not available yet.");
+          return;
+        }
+
+        const seekableEnd = video.seekable.end(video.seekable.length - 1);
+        const liveSafetyOffset = lastLiveTargetDuration ? Math.min(lastLiveTargetDuration, 2) : 1;
+        const livePosition = Math.max(seekableEnd - liveSafetyOffset, 0);
+
+        stayBehindLive = false;
+        video.currentTime = livePosition;
+        refreshLiveModeState();
+
+        try {
+          await video.play();
+          setStatus("Back at the live edge.");
+        } catch (error) {
+          setStatus(`Jumped to live edge, but autoplay was blocked: ${error}`);
+        }
+      }
 
       function setStatus(message) {
         status.textContent = message;
@@ -265,6 +340,9 @@
         video.pause();
         video.removeAttribute("src");
         video.load();
+        stayBehindLive = false;
+        lastLiveTargetDuration = 0;
+        updateGoLiveButton();
       }
 
       function populatePicker(playlists) {
@@ -331,7 +409,6 @@
             maxBufferLength: 30,
             maxMaxBufferLength: 60,
             liveSyncDurationCount: 4,
-            liveMaxLatencyDurationCount: 12,
             maxLiveSyncPlaybackRate: 1.2,
             lowLatencyMode: false,
             enableWorker: true,
@@ -349,13 +426,18 @@
           hls.on(window.Hls.Events.ERROR, (_event, data) => {
             if (data?.fatal && data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
               setStatus(`Network hiccup: ${data.details}. Retrying stream...`);
-              hls.startLoad();
+              hls.startLoad(stayBehindLive ? video.currentTime : -1);
               return;
             }
 
             if (data?.fatal && data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
               setStatus(`Media hiccup: ${data.details}. Recovering player...`);
               hls.recoverMediaError();
+              if (stayBehindLive) {
+                queueMicrotask(() => {
+                  video.currentTime = Math.max(video.currentTime - 0.25, 0);
+                });
+              }
               return;
             }
 
@@ -365,8 +447,14 @@
             const targetDuration = data?.details?.targetduration;
             const isLive = Boolean(data?.details?.live);
             const fragmentCount = data?.details?.fragments?.length ?? 0;
+            lastLiveTargetDuration = targetDuration ?? 0;
+            refreshLiveModeState();
             if (targetDuration && isLive) {
-              setStatus(`Live stream ready. Segment length: ${targetDuration}s. DVR window: about ${Math.round(fragmentCount * targetDuration)}s.`);
+              setStatus(
+                stayBehindLive
+                  ? `Replaying older live segments. DVR window: about ${Math.round(fragmentCount * targetDuration)}s.`
+                  : `Live stream ready. Segment length: ${targetDuration}s. DVR window: about ${Math.round(fragmentCount * targetDuration)}s.`,
+              );
               return;
             }
 
@@ -378,6 +466,7 @@
         }
 
         if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          goLiveButton.hidden = false;
           video.src = source;
           try {
             await video.play();
@@ -389,12 +478,24 @@
         }
 
         setStatus("This browser does not support HLS playback here.");
+        updateGoLiveButton();
       }
+
+      video.addEventListener("seeking", refreshLiveModeState);
+      video.addEventListener("seeked", refreshLiveModeState);
+      video.addEventListener("timeupdate", () => {
+        if (!isLiveWindowActive()) {
+          return;
+        }
+
+        refreshLiveModeState();
+      });
 
       picker.addEventListener("change", () => {
         input.value = picker.value;
       });
       button.addEventListener("click", loadStream);
+      goLiveButton.addEventListener("click", goLive);
       bootstrapPlaylists();
     </script>
   </body>
