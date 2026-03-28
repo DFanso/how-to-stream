@@ -1,16 +1,16 @@
-1254 |       "cache-control": resolvedPath.startsWith(streamsRoot) ? "no-cache" : "public, max-age=300",
-1255 |       "content-type": getContentType(resolvedPath),
-1256 |       "access-control-allow-origin": "*"
-1257 |     }
-1258 |   });
-1259 | var server = Bun.serve({
+1265 |       "cache-control": getCacheControl(resolvedPath),
+1266 |       "content-type": getContentType(resolvedPath),
+1267 |       "access-control-allow-origin": "*"
+1268 |     }
+1269 |   });
+1270 | var server = Bun.serve({
                              ^
 error: Failed to start server. Is port 3001 in use?
  syscall: "listen",
    errno: 0,
     code: "EADDRINUSE"
 
-      at F:\Git\how-to-stream\dist\server.js:1259:23
+      at F:\Git\how-to-stream\dist\server.js:1270:23
       at loadAndEvaluateModule (2:1)
 note: missing sourcemaps for F:\Git\how-to-stream\dist\server.js
 note: consider bundling with '--sourcemap' to get unminified traces

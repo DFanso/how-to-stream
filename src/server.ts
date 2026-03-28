@@ -11,6 +11,20 @@ const HLS_CONTENT_TYPES: Record<string, string> = {
   ".ts": "video/mp2t",
 };
 
+function getCacheControl(filePath: string): string {
+  const extension = extname(filePath);
+
+  if (extension === ".m3u8") {
+    return "public, max-age=0, must-revalidate";
+  }
+
+  if (extension === ".ts") {
+    return "public, max-age=3600, stale-while-revalidate=86400";
+  }
+
+  return "public, max-age=300";
+}
+
 function getContentType(filePath: string): string {
   const extension = extname(filePath);
 
@@ -85,7 +99,8 @@ async function fileResponse(baseDir: string, requestPath: string): Promise<Respo
 
   return new Response(file, {
     headers: {
-      "cache-control": resolvedPath.startsWith(streamsRoot) ? "no-cache" : "public, max-age=300",
+      "accept-ranges": "bytes",
+      "cache-control": getCacheControl(resolvedPath),
       "content-type": getContentType(resolvedPath),
       "access-control-allow-origin": "*",
     },

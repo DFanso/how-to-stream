@@ -337,7 +337,12 @@
           return;
         }
 
-        hls = new window.Hls();
+        hls = new window.Hls({
+          backBufferLength: 8,
+          maxBufferLength: 16,
+          maxMaxBufferLength: 24,
+          enableWorker: true,
+        });
         hls.loadSource(source);
         hls.attachMedia(video);
         hls.on(window.Hls.Events.MANIFEST_PARSED, async () => {
@@ -350,6 +355,12 @@
         });
         hls.on(window.Hls.Events.ERROR, (_event, data) => {
           setStatus(`HLS error: ${data.type} / ${data.details}`);
+        });
+        hls.on(window.Hls.Events.LEVEL_LOADED, (_event, data) => {
+          const targetDuration = data?.details?.targetduration;
+          if (targetDuration) {
+            setStatus(`Manifest ready. Target segment length: ${targetDuration}s.`);
+          }
         });
       }
 
