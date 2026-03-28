@@ -4,9 +4,10 @@ import { resolve } from "node:path";
 const input = Bun.argv[2];
 const outputDir = Bun.argv[3] ?? "streams";
 const mode = Bun.argv[4] ?? "multi";
+const segmentDuration = Bun.argv[5] ?? (mode === "event" || mode === "live" ? "2" : "4");
 
 if (!input) {
-  console.error("Usage: bun run generate:hls -- <input-file> [output-dir] [single|multi]");
+  console.error("Usage: bun run generate:hls -- <input-file> [output-dir] [single|multi|event|live] [segment-seconds]");
   process.exit(1);
 }
 
@@ -45,8 +46,12 @@ const singleVariantArgs = [
   "aac",
   "-preset",
   "veryfast",
+  "-force_key_frames",
+  `expr:gte(t,n_forced*${segmentDuration})`,
+  "-sc_threshold",
+  "0",
   "-hls_time",
-  "4",
+  segmentDuration,
   "-hls_playlist_type",
   "vod",
   "-hls_list_size",
@@ -73,6 +78,10 @@ const multiVariantArgs = [
   "aac",
   "-preset",
   "veryfast",
+  "-force_key_frames",
+  `expr:gte(t,n_forced*${segmentDuration})`,
+  "-sc_threshold",
+  "0",
   "-b:v:0",
   "2800k",
   "-b:v:1",
@@ -80,7 +89,7 @@ const multiVariantArgs = [
   "-b:a",
   "128k",
   "-hls_time",
-  "4",
+  segmentDuration,
   "-hls_playlist_type",
   "vod",
   "-hls_list_size",
@@ -90,6 +99,41 @@ const multiVariantArgs = [
   "-hls_segment_filename",
   "%v/segment_%03d.ts",
   "%v/index.m3u8",
+];
+
+const rollingInputArgs = mode === "live" ? ["-re", "-i", absoluteInput] : ["-i", absoluteInput];
+const rollingModeArgs =
+  mode === "event"
+    ? ["-hls_playlist_type", "event", "-hls_list_size", "0", "-hls_flags", "append_list+independent_segments+temp_file"]
+    : [
+        "-hls_list_size",
+        "45",
+        "-hls_delete_threshold",
+        "45",
+        "-hls_flags",
+        "delete_segments+append_list+independent_segments+program_date_time+omit_endlist+temp_file",
+      ];
+
+const rollingVariantArgs = [
+  ...rollingInputArgs,
+  "-c:v",
+  "libx264",
+  "-c:a",
+  "aac",
+  "-preset",
+  "veryfast",
+  "-force_key_frames",
+  `expr:gte(t,n_forced*${segmentDuration})`,
+  "-sc_threshold",
+  "0",
+  "-hls_start_number_source",
+  "epoch",
+  ...rollingModeArgs,
+  "-hls_time",
+  segmentDuration,
+  "-hls_segment_filename",
+  "segment_%03d.ts",
+  "master.m3u8",
 ];
 
 if (hasAudio) {
@@ -106,7 +150,7 @@ if (mode === "multi") {
   ]);
 }
 
-const args = mode === "single" ? singleVariantArgs : multiVariantArgs;
+const args = mode === "single" ? singleVariantArgs : mode === "multi" ? multiVariantArgs : rollingVariantArgs;
 
 const proc = Bun.spawn(["ffmpeg", ...args], {
   cwd: absoluteOutputDir,
@@ -123,4 +167,17 @@ if (exitCode !== 0) {
 }
 
 console.log(`HLS output generated in ${absoluteOutputDir}`);
-console.log(mode === "single" ? "Load /streams/index.m3u8 in the demo page." : "Load /streams/master.m3u8 in the demo page.");
+const publicOutputDir = outputDir
+  .replace(/\\/g, "/")
+  .replace(/^\.\//, "")
+  .replace(/^\//, "")
+  .replace(/^streams\//, "")
+  .replace(/^streams$/, "");
+const publicPlaylistPath = publicOutputDir ? `/streams/${publicOutputDir}/master.m3u8` : "/streams/master.m3u8";
+
+if (mode === "single") {
+  const singlePath = publicOutputDir ? `/streams/${publicOutputDir}/index.m3u8` : "/streams/index.m3u8";
+  console.log(`Load ${singlePath} in the demo page.`);
+} else {
+  console.log(`Load ${publicPlaylistPath} in the demo page.`);
+}

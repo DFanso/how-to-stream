@@ -4,3 +4,4 @@ streams/**/*.ts
 streams/**/*.m3u8
 !streams/.gitkeep
 *.mp4
+*.log

@@ -46,6 +46,18 @@ Single-variant output:
 bun run generate:hls -- ./video/sample.mp4 streams single
 ```
 
+Rolling event output for long videos (play before full transcode finishes):
+
+```bash
+bun run generate:hls -- ./video/sample.mp4 streams/live-demo event 2
+```
+
+Sliding live-window output:
+
+```bash
+bun run generate:hls -- ./video/sample.mp4 streams/live-demo live 2
+```
+
 This writes playlists and segments under `streams/`.
 
 ## Run the server

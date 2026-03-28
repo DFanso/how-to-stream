@@ -261,6 +261,10 @@
           hls.destroy();
           hls = undefined;
         }
+
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
       }
 
       function populatePicker(playlists) {
@@ -321,6 +325,58 @@
         destroyHls();
         setStatus(`Loading ${source} ...`);
 
+        if (window.Hls && window.Hls.isSupported()) {
+          hls = new window.Hls({
+            backBufferLength: 120,
+            maxBufferLength: 30,
+            maxMaxBufferLength: 60,
+            liveSyncDurationCount: 4,
+            liveMaxLatencyDurationCount: 12,
+            maxLiveSyncPlaybackRate: 1.2,
+            lowLatencyMode: false,
+            enableWorker: true,
+          });
+          hls.loadSource(source);
+          hls.attachMedia(video);
+          hls.on(window.Hls.Events.MANIFEST_PARSED, async () => {
+            try {
+              await video.play();
+              setStatus("Manifest parsed. Playback started.");
+            } catch (error) {
+              setStatus(`Manifest parsed, but autoplay was blocked: ${error}`);
+            }
+          });
+          hls.on(window.Hls.Events.ERROR, (_event, data) => {
+            if (data?.fatal && data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+              setStatus(`Network hiccup: ${data.details}. Retrying stream...`);
+              hls.startLoad();
+              return;
+            }
+
+            if (data?.fatal && data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+              setStatus(`Media hiccup: ${data.details}. Recovering player...`);
+              hls.recoverMediaError();
+              return;
+            }
+
+            setStatus(`HLS error: ${data.type} / ${data.details}`);
+          });
+          hls.on(window.Hls.Events.LEVEL_LOADED, (_event, data) => {
+            const targetDuration = data?.details?.targetduration;
+            const isLive = Boolean(data?.details?.live);
+            const fragmentCount = data?.details?.fragments?.length ?? 0;
+            if (targetDuration && isLive) {
+              setStatus(`Live stream ready. Segment length: ${targetDuration}s. DVR window: about ${Math.round(fragmentCount * targetDuration)}s.`);
+              return;
+            }
+
+            if (targetDuration) {
+              setStatus(`Manifest ready. Target segment length: ${targetDuration}s.`);
+            }
+          });
+          return;
+        }
+
         if (video.canPlayType("application/vnd.apple.mpegurl")) {
           video.src = source;
           try {
@@ -332,36 +388,7 @@
           return;
         }
 
-        if (!window.Hls || !window.Hls.isSupported()) {
-          setStatus("This browser does not support HLS playback here.");
-          return;
-        }
-
-        hls = new window.Hls({
-          backBufferLength: 8,
-          maxBufferLength: 16,
-          maxMaxBufferLength: 24,
-          enableWorker: true,
-        });
-        hls.loadSource(source);
-        hls.attachMedia(video);
-        hls.on(window.Hls.Events.MANIFEST_PARSED, async () => {
-          try {
-            await video.play();
-            setStatus("Manifest parsed. Playback started.");
-          } catch (error) {
-            setStatus(`Manifest parsed, but autoplay was blocked: ${error}`);
-          }
-        });
-        hls.on(window.Hls.Events.ERROR, (_event, data) => {
-          setStatus(`HLS error: ${data.type} / ${data.details}`);
-        });
-        hls.on(window.Hls.Events.LEVEL_LOADED, (_event, data) => {
-          const targetDuration = data?.details?.targetduration;
-          if (targetDuration) {
-            setStatus(`Manifest ready. Target segment length: ${targetDuration}s.`);
-          }
-        });
+        setStatus("This browser does not support HLS playback here.");
       }
 
       picker.addEventListener("change", () => {
