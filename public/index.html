@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bun HLS Demo</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4efe6;
+        --panel: rgba(255, 251, 245, 0.9);
+        --ink: #1b1714;
+        --muted: #6e6256;
+        --line: rgba(27, 23, 20, 0.12);
+        --accent: #0f766e;
+        --accent-strong: #115e59;
+        --shadow: 0 24px 70px rgba(46, 34, 22, 0.14);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Georgia, "Times New Roman", serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(15, 118, 110, 0.12), transparent 28%),
+          radial-gradient(circle at right, rgba(217, 119, 6, 0.12), transparent 24%),
+          linear-gradient(180deg, #fbf7f2 0%, var(--bg) 100%);
+      }
+
+      main {
+        width: min(1100px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 40px 0 64px;
+      }
+
+      .hero {
+        display: grid;
+        gap: 24px;
+        margin-bottom: 28px;
+      }
+
+      .eyebrow {
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        font-family: "Trebuchet MS", sans-serif;
+        color: var(--accent-strong);
+        font-size: 0.78rem;
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 11ch;
+        font-size: clamp(2.8rem, 7vw, 5.4rem);
+        line-height: 0.95;
+        font-weight: 700;
+      }
+
+      .lead {
+        max-width: 58ch;
+        margin: 0;
+        color: var(--muted);
+        font-size: 1.05rem;
+        line-height: 1.7;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.95fr);
+        gap: 24px;
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        padding: 22px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+      }
+
+      .player-shell {
+        overflow: hidden;
+      }
+
+      video {
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        border-radius: 18px;
+        background: #000;
+      }
+
+      .controls {
+        display: grid;
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .control-row {
+        display: grid;
+        gap: 12px;
+      }
+
+      label {
+        font-size: 0.86rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-family: "Trebuchet MS", sans-serif;
+      }
+
+      input {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px 16px;
+        font: inherit;
+        background: rgba(255, 255, 255, 0.75);
+      }
+
+      select {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px 16px;
+        font: inherit;
+        background: rgba(255, 255, 255, 0.75);
+      }
+
+      button {
+        border: 0;
+        border-radius: 999px;
+        padding: 12px 18px;
+        font: inherit;
+        font-weight: 700;
+        color: white;
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+        cursor: pointer;
+      }
+
+      button:hover {
+        filter: brightness(1.04);
+      }
+
+      .status {
+        min-height: 1.5rem;
+        margin: 8px 0 0;
+        color: var(--muted);
+      }
+
+      .stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      .stack h2,
+      .stack h3 {
+        margin: 0 0 8px;
+      }
+
+      .stack p,
+      .stack li {
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      code {
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 0.94em;
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      @media (max-width: 840px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        main {
+          width: min(100% - 24px, 1100px);
+          padding-top: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <span class="eyebrow">Bun + TypeScript + HLS</span>
+        <h1>Stream small chunks, not giant files.</h1>
+        <p class="lead">
+          This page plays an HLS playlist from your local <code>/streams</code> folder. Generate
+          <code>.m3u8</code> and <code>.ts</code> files with <code>ffmpeg</code>, keep them in the
+          repo, and Bun serves them over plain HTTP.
+        </p>
+      </section>
+
+      <section class="grid">
+        <article class="card player-shell">
+          <video id="video" controls playsinline></video>
+          <div class="controls">
+            <div>
+              <label for="playlist-picker">Available manifests</label>
+              <select id="playlist-picker">
+                <option value="">Scanning /streams ...</option>
+              </select>
+            </div>
+            <div>
+              <label for="playlist-url">Playlist path</label>
+              <input id="playlist-url" value="" placeholder="/streams/harry-potter-hls/master.m3u8" />
+            </div>
+            <button id="load-button" type="button">Load stream</button>
+            <p id="status" class="status">Waiting for a playlist...</p>
+          </div>
+        </article>
+
+        <aside class="stack">
+          <section class="card">
+            <h2>How it fits together</h2>
+            <ul>
+              <li><code>master.m3u8</code> lists available qualities.</li>
+              <li>Each quality playlist lists timed <code>.ts</code> segments.</li>
+              <li>The player fetches segments over HTTP as playback advances.</li>
+            </ul>
+          </section>
+
+          <section class="card">
+            <h3>Local defaults</h3>
+            <p>
+              The page now scans <code>/streams</code> for available <code>master.m3u8</code>
+              files. For your generated trailer, choose
+              <code>/streams/harry-potter-hls/master.m3u8</code>.
+            </p>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+    <script>
+      const video = document.getElementById("video");
+      const status = document.getElementById("status");
+      const picker = document.getElementById("playlist-picker");
+      const input = document.getElementById("playlist-url");
+      const button = document.getElementById("load-button");
+      let hls;
+
+      function setStatus(message) {
+        status.textContent = message;
+      }
+
+      function destroyHls() {
+        if (hls) {
+          hls.destroy();
+          hls = undefined;
+        }
+      }
+
+      function populatePicker(playlists) {
+        picker.innerHTML = "";
+
+        if (!playlists.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "No master playlists found";
+          picker.appendChild(option);
+          return;
+        }
+
+        for (const playlist of playlists) {
+          const option = document.createElement("option");
+          option.value = playlist;
+          option.textContent = playlist;
+          picker.appendChild(option);
+        }
+      }
+
+      async function bootstrapPlaylists() {
+        setStatus("Scanning /streams for playable HLS manifests...");
+
+        try {
+          const response = await fetch("/api/streams");
+          if (!response.ok) {
+            throw new Error(`API returned ${response.status}`);
+          }
+
+          const data = await response.json();
+          const playlists = Array.isArray(data.playlists) ? data.playlists : [];
+          populatePicker(playlists);
+
+          if (!input.value && playlists.length) {
+            input.value = playlists[0];
+            picker.value = playlists[0];
+          }
+
+          if (!playlists.length) {
+            setStatus("No master playlists found. Generate one under /streams first.");
+            return;
+          }
+
+          await loadStream();
+        } catch (error) {
+          setStatus(`Could not scan playlists: ${error}`);
+        }
+      }
+
+      async function loadStream() {
+        const source = input.value.trim();
+        if (!source) {
+          setStatus("Enter a playlist path first.");
+          return;
+        }
+
+        destroyHls();
+        setStatus(`Loading ${source} ...`);
+
+        if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          video.src = source;
+          try {
+            await video.play();
+            setStatus("Playing with native HLS support.");
+          } catch (error) {
+            setStatus(`Loaded, but autoplay was blocked: ${error}`);
+          }
+          return;
+        }
+
+        if (!window.Hls || !window.Hls.isSupported()) {
+          setStatus("This browser does not support HLS playback here.");
+          return;
+        }
+
+        hls = new window.Hls();
+        hls.loadSource(source);
+        hls.attachMedia(video);
+        hls.on(window.Hls.Events.MANIFEST_PARSED, async () => {
+          try {
+            await video.play();
+            setStatus("Manifest parsed. Playback started.");
+          } catch (error) {
+            setStatus(`Manifest parsed, but autoplay was blocked: ${error}`);
+          }
+        });
+        hls.on(window.Hls.Events.ERROR, (_event, data) => {
+          setStatus(`HLS error: ${data.type} / ${data.details}`);
+        });
+      }
+
+      picker.addEventListener("change", () => {
+        input.value = picker.value;
+      });
+      button.addEventListener("click", loadStream);
+      bootstrapPlaylists();
+    </script>
+  </body>
+</html>
